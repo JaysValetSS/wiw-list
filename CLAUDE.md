@@ -1,7 +1,7 @@
 # WIW Visualizer
 
 Single-file, client-side dashboard that turns "When I Work" (WIW) Excel exports into an
-interactive staffing schedule. No build step, no backend — open `wiw_visualizer.html`
+interactive staffing schedule. No build step, no backend — open `index.html`
 directly in a browser.
 
 **Keep it a single file.** Portability (email it, drop it on a USB stick, open it with
@@ -46,7 +46,7 @@ reloading it in a browser.
 - *Users roster*: sheet with `First Name`, `Last Name`, `Phone Number`, `Email`,
   `Positions`.
 
-**Pipeline** (`processFiles`, `wiw_visualizer.html:241`):
+**Pipeline** (`processFiles`, `index.html:241`):
 1. Parse Users sheet → `usersMap` keyed by `"firstname lastname"` (lowercase).
 2. Parse every `Schedules - *` sheet → flat `allShifts` array, tagged with
    `_sourceSchedule`.
@@ -70,7 +70,7 @@ reloading it in a browser.
 - `wiw_dashboard_data` — `{ events, availableFilters, usersMap }`, the whole dashboard.
 - `wiw_staff_notes` — private per-shift notes, keyed by
   `` `${eventId}::${staff.fullName}::${staff.startTime}` `` (see `StaffRow`,
-  `wiw_visualizer.html:539`). Note this key silently breaks if a staff member's start
+  `index.html:539`). Note this key silently breaks if a staff member's start
   time changes between syncs (their old note becomes orphaned under the old key).
 
 ## View modes
@@ -102,14 +102,14 @@ active role/schedule filter pills) as their common data source.
 
 ## Known rough edges (context for future changes, not necessarily bugs to fix unasked)
 
-- `removeFile()` (`wiw_visualizer.html:227`) resets `parsedData` to
+- `removeFile()` (`index.html:227`) resets `parsedData` to
   `{ events: [], availableFilters: [] }` — missing `usersMap`, which will make
   `Object.keys(parsedData.usersMap)` throw if this path is hit after data already
   exists. Worth fixing together with any nearby upload-flow change.
-- Date parsing (`wiw_visualizer.html:300–318`) handles Excel serial numbers and
+- Date parsing (`index.html:300–318`) handles Excel serial numbers and
   `YYYY-MM-DD` strings explicitly; anything else falls through to `new Date(rawDate)`
   which is locale/format fragile.
-- The scroll-driven header/filter-bar repositioning (`wiw_visualizer.html:1123–1150`)
+- The scroll-driven header/filter-bar repositioning (`index.html:1123–1150`)
   hardcodes pixel offsets per breakpoint (`160px`/`200px`, `100px`/`120px`) rather than
   reading actual element heights — if header content changes height, these need manual
   re-tuning.
@@ -118,9 +118,10 @@ active role/schedule filter pills) as their common data source.
 
 ## Working in this repo
 
-- This directory is **not** a git repo. There's no version control here — be extra
-  careful with edits (the file is the only copy) and consider suggesting `git init` if
-  the user starts making frequent changes.
-- `wiw_visualizer.html` is the canonical file going forward. `wiw_visualizer (2).html`
-  is the original upload kept as-is for reference/diffing; prefer editing the
-  space/paren-free copy to avoid shell-quoting friction.
+- Git repo, hosted at `JaysValetSS/wiw-list` on GitHub and served live via GitHub Pages
+  (repo is public — required for free Pages hosting; private Pages needs a paid plan).
+- `index.html` is the only file that matters at runtime — it's both the app and the page
+  GitHub Pages serves at the repo root. Keep it that name; don't reintroduce a
+  differently-named copy.
+- Commits here are made under the `natesheridan` GitHub identity (day-to-day changes);
+  `jaysvalet`/JaysValetSS is the org-owner/admin account, not the one pushing routine work.
