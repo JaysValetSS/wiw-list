@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WIW Visualizer</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- SheetJS for parsing Excel -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  
+  <!-- React & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  
+  <!-- Babel for parsing JSX in browser -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Phosphor Icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+  <style>
+    body {
+      background-color: #09090b; /* zinc-950 */
+      color: #f4f4f5; /* zinc-100 */
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+      overflow-x: hidden;
+    }
+    
+    /* Liquid Glass Utilities */
+    .glass-panel {
+      background: rgba(24, 24, 27, 0.4);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(250, 204, 21, 0.15);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    }
+
+    .glass-header {
+      background: rgba(9, 9, 11, 0.7);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(250, 204, 21, 0.2);
+    }
+
+    /* Custom Scrollbar */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(250, 204, 21, 0.3);
+      border-radius: 10px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: rgba(250, 204, 21, 0.6);
+    }
+
+    /* Animations */
+    @keyframes slideUpFade {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-slide-up {
+      animation: slideUpFade 0.3s ease-out forwards;
+    }
+    
+    /* Smooth Accordion Trick */
+    .grid-accordion {
+      display: grid;
+      grid-template-rows: 0fr;
+      transition: grid-template-rows 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease-out;
+      opacity: 0;
+    }
+    .grid-accordion.expanded {
+      grid-template-rows: 1fr;
+      opacity: 1;
+    }
+    .grid-accordion-inner {
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body class="antialiased min-h-screen relative selection:bg-yellow-400 selection:text-black">
+  
+  <!-- Liquid Background Effects -->
+  <div class="fixed inset-0 z-[-1] overflow-hidden pointer-events-none">
+    <div class="absolute top-[-10%] left-[-10%] w-[60vw] h-[60vw] max-w-[600px] max-h-[600px] bg-yellow-500/10 rounded-full blur-[100px] opacity-70"></div>
+    <div class="absolute bottom-[-10%] right-[-10%] w-[70vw] h-[70vw] max-w-[700px] max-h-[700px] bg-yellow-600/10 rounded-full blur-[120px] opacity-60"></div>
+  </div>
+
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo, useEffect, useRef } = React;
+
+    const Toast = ({ message, isVisible }) => {
+      if (!isVisible) return null;
+      return (
+        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 animate-slide-up">
+          <div className="glass-panel px-6 py-3 rounded-full flex items-center gap-3 text-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.2)]">
+            <i className="ph-fill ph-check-circle text-xl"></i>
+            <span className="font-semibold text-sm tracking-wide">{message}</span>
+          </div>
+        </div>
+      );
+    };
+
+    function App() {
+      // File State
+      const [scheduleFile, setScheduleFile] = useState(null);
+      const [usersFile, setUsersFile] = useState(null);
+      const [dragActiveSchedule, setDragActiveSchedule] = useState(false);
+      const [dragActiveUsers, setDragActiveUsers] = useState(false);
+      
+      // App State
+      const [isProcessing, setIsProcessing] = useState(false);
+      const [error, setError] = useState('');
+      const [toastMsg, setToastMsg] = useState('');
+      const [showToast, setShowToast] = useState(false);
+      
+      // Personal Notes State (localStorage)
+      const [staffNotes, setStaffNotes] = useState(() => {
+        try {
+          const saved = localStorage.getItem('wiw_staff_notes');
+          return saved ? JSON.parse(saved) : {};
+        } catch(e) {
+          return {};
+        }
+      });
+
+      const updateStaffNote = (shiftKey, note) => {
+        const updated = { ...staffNotes, [shiftKey]: note };
+        setStaffNotes(updated);
+        localStorage.setItem('wiw_staff_notes', JSON.stringify(updated));
+      };
+      
+      // Data State
+      const [parsedData, setParsedData] = useState(() => {
+        try {
+          const saved = localStorage.getItem('wiw_dashboard_data');
+          if (saved) return JSON.parse(saved);
+        } catch(e) {}
+        return { events: [], availableFilters: [], usersMap: {} };
+      });
+
+      useEffect(() => {
+        localStorage.setItem('wiw_dashboard_data', JSON.stringify(parsedData));
+      }, [parsedData]);
+
+      const [showDataSync, setShowDataSync] = useState(parsedData.events.length === 0);
+      const [showWipeConfirm, setShowWipeConfirm] = useState(false);
+      
+      // Filter & View State
+      const [viewMode, setViewMode] = useState('daily');
+      const [searchQuery, setSearchQuery] = useState('');
+      const [activeFilters, setActiveFilters] = useState([]);
+      const [filterInput, setFilterInput] = useState(''); // Quick Search state
+      
+      const [showPastEvents, setShowPastEvents] = useState(false);
+      const [collapsedDates, setCollapsedDates] = useState({});
+      const [collapsedCategories, setCollapsedCategories] = useState({
+        accounts: false,
+        mainParties: false
+      });
+
+      const showNotification = (msg) => {
+        setToastMsg(msg);
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 3000);
+      };
+
+      const handleDrag = (e, type) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.type === "dragenter" || e.type === "dragover") {
+          type === 'schedule' ? setDragActiveSchedule(true) : setDragActiveUsers(true);
+        } else if (e.type === "dragleave") {
+          type === 'schedule' ? setDragActiveSchedule(false) : setDragActiveUsers(false);
+        }
+      };
+
+      const handleDrop = (e, targetType) => {
+        e.preventDefault();
+        e.stopPropagation();
+        targetType === 'schedule' ? setDragActiveSchedule(false) : setDragActiveUsers(false);
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          assignFile(e.dataTransfer.files[0], targetType);
+        }
+      };
+
+      const handleFileChange = (e, targetType) => {
+        if (e.target.files && e.target.files[0]) {
+          assignFile(e.target.files[0], targetType);
+        }
+      };
+
+      const assignFile = (file, forcedType = null) => {
+        setError('');
+        const fileName = file.name.toLowerCase();
+        let type = forcedType;
+        if (!type) {
+            if (fileName.includes('schedule')) type = 'schedule';
+            else if (fileName.includes('user')) type = 'users';
+            else {
+                 setError('Could not automatically determine file type. Please use the specific upload zones.');
+                 return;
+            }
+        }
+
+        if (type === 'schedule') {
+             if (fileName.includes('user')) setError('Warning: A User file may have been dropped in the Schedule slot.');
+             setScheduleFile(file);
+        }
+        if (type === 'users') {
+             if (fileName.includes('schedule')) setError('Warning: A Schedule file may have been dropped in the Users slot.');
+             setUsersFile(file);
+        }
+      };
+
+      const removeFile = (type) => {
+        type === 'schedule' ? setScheduleFile(null) : setUsersFile(null);
+        setParsedData({ events: [], availableFilters: [] });
+      };
+
+      const readFileAsArrayBuffer = (file) => {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.onerror = (e) => reject(e);
+          reader.readAsArrayBuffer(file);
+        });
+      };
+
+      const processFiles = async () => {
+        if (!scheduleFile && !usersFile) {
+          setError('Please upload at least a Schedule or Users file to update the dashboard.');
+          return;
+        }
+
+        setIsProcessing(true);
+        setError('');
+
+        try {
+          let currentUsersMap = { ...parsedData.usersMap };
+          let currentEvents = [ ...parsedData.events ];
+          let newFiltersSet = new Set(parsedData.availableFilters);
+
+          // Parse Users
+          if (usersFile) {
+            const usersBuffer = await readFileAsArrayBuffer(usersFile);
+            const usersWorkbook = window.XLSX.read(usersBuffer, { type: 'array' });
+            const usersSheet = usersWorkbook.Sheets[usersWorkbook.SheetNames[0]];
+            const usersRawData = window.XLSX.utils.sheet_to_json(usersSheet);
+            
+            usersRawData.forEach(user => {
+              const fname = (user['First Name'] || '').trim().toLowerCase();
+              const lname = (user['Last Name'] || '').trim().toLowerCase();
+              const phone = String(user['Phone Number'] || '');
+              const email = user['Email'] || '';
+              const roles = user['Positions'] || '';
+              
+              if (fname || lname) {
+                currentUsersMap[`${fname} ${lname}`] = { phone, email, roles };
+              }
+            });
+          }
+
+          // Parse Schedule
+          if (scheduleFile) {
+            const scheduleBuffer = await readFileAsArrayBuffer(scheduleFile);
+            const scheduleWorkbook = window.XLSX.read(scheduleBuffer, { type: 'array' });
+            
+            let allShifts = [];
+            scheduleWorkbook.SheetNames.forEach(sheetName => {
+              if (sheetName.startsWith('Schedules - ')) {
+                const sheet = scheduleWorkbook.Sheets[sheetName];
+                const rows = window.XLSX.utils.sheet_to_json(sheet);
+                rows.forEach(r => r._sourceSchedule = sheetName.replace('Schedules - ', ''));
+                allShifts = allShifts.concat(rows);
+              }
+            });
+
+            const eventsMap = {};
+            const accountKeywords = ['matsuhisa', 'eddie', 'capital', 'mojo', 'hudson'];
+            const newDatesSet = new Set(); // Track dates included in this upload
+
+            allShifts.forEach(row => {
+              const fname = (row['First Name'] || '').trim();
+              const lname = (row['Last Name'] || '').trim();
+              const fullNameKey = `${fname.toLowerCase()} ${lname.toLowerCase()}`;
+              const userInfo = currentUsersMap[fullNameKey] || { phone: '', email: '', roles: '' };
+              
+              const rawDate = row['Shift Start Date'];
+              let formattedDate = rawDate ? String(rawDate) : 'Unknown Date';
+              let timestamp = 0;
+              if (rawDate) {
+                  let d;
+                  if (typeof rawDate === 'number') {
+                      d = new Date((rawDate - (25569)) * 86400 * 1000);
+                  } else if (typeof rawDate === 'string' && rawDate.includes('-')) {
+                      const [y, m, day] = rawDate.split('-');
+                      d = new Date(parseInt(y), parseInt(m)-1, parseInt(day));
+                  } else {
+                      d = new Date(rawDate);
+                  }
+
+                  if (!isNaN(d.getTime())) {
+                      timestamp = d.getTime();
+                      formattedDate = d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+                  }
+              }
+
+              newDatesSet.add(formattedDate);
+
+              const position = (row['Position'] || 'Unassigned Position').trim();
+              const scheduleDisplay = (row._sourceSchedule || 'Unknown Schedule').trim();
+              
+              if (position) newFiltersSet.add(position);
+              if (scheduleDisplay) newFiltersSet.add(scheduleDisplay);
+
+              const site = (row['Site'] || 'Unknown Site').trim();
+              const isAccount = accountKeywords.some(kw => scheduleDisplay.toLowerCase().includes(kw));
+              
+              const shiftData = {
+                ...row,
+                phone: userInfo.phone,
+                email: userInfo.email,
+                roles: userInfo.roles,
+                fullName: `${fname} ${lname}`.trim(),
+                date: formattedDate,
+                site: site,
+                position: position,
+                schedule: scheduleDisplay,
+                startTime: row['Shift Start Time'] || '',
+                endTime: row['Shift End Time'] || '',
+                notes: row['Notes'] || ''
+              };
+
+              const openShiftCount = parseInt(row['OpenShift Count'], 10) || 0;
+              const isOpenShift = !fname || openShiftCount > 0;
+              
+              const groupKey = `${formattedDate}::${site}`;
+
+              if (!eventsMap[groupKey]) {
+                  eventsMap[groupKey] = {
+                      id: groupKey,
+                      date: formattedDate,
+                      timestamp: timestamp,
+                      site: site,
+                      isAccount: isAccount,
+                      assigned: [],
+                      open: [],
+                      notes: shiftData.notes || '',
+                      allTags: new Set()
+                  };
+              }
+
+              eventsMap[groupKey].allTags.add(position);
+              eventsMap[groupKey].allTags.add(scheduleDisplay);
+              
+              if (!eventsMap[groupKey].notes && shiftData.notes) {
+                  eventsMap[groupKey].notes = shiftData.notes;
+              }
+
+              if (isOpenShift) {
+                  const count = Math.max(1, openShiftCount);
+                  for(let i=0; i<count; i++) {
+                      eventsMap[groupKey].open.push({...shiftData, isPlaceholder: true});
+                  }
+              } else {
+                  eventsMap[groupKey].assigned.push(shiftData);
+              }
+            });
+
+            // Replace existing events on the newly synced dates
+            currentEvents = currentEvents.filter(e => !newDatesSet.has(e.date));
+            currentEvents = currentEvents.concat(Object.values(eventsMap));
+
+          } else if (usersFile && currentEvents.length > 0) {
+            // Re-map existing events if ONLY users file was uploaded
+            currentEvents = currentEvents.map(event => ({
+              ...event,
+              assigned: event.assigned.map(staff => {
+                 if (staff.isPlaceholder) return staff;
+                 const ui = currentUsersMap[staff.fullName.toLowerCase()];
+                 return ui ? { ...staff, phone: ui.phone, email: ui.email, roles: ui.roles } : staff;
+              })
+            }));
+          }
+
+          // Need to serialize Sets for localStorage to work cleanly
+          currentEvents = currentEvents.map(ev => ({...ev, allTagsArray: Array.from(ev.allTags || [])}));
+
+          setParsedData({ 
+            events: currentEvents, 
+            availableFilters: Array.from(newFiltersSet).sort(),
+            usersMap: currentUsersMap
+          });
+          
+          setScheduleFile(null);
+          setUsersFile(null);
+          setShowDataSync(false);
+          showNotification('Dashboard successfully synchronized!');
+        } catch (err) {
+          console.error(err);
+          setError('An error occurred while processing. Ensure files are valid WIW exports.');
+        } finally {
+          setIsProcessing(false);
+        }
+      };
+
+      const toggleFilter = (filter) => {
+        setActiveFilters(prev => 
+          prev.includes(filter) ? prev.filter(f => f !== filter) : [...prev, filter]
+        );
+      };
+
+      const handleFilterSubmit = (e) => {
+        e.preventDefault();
+        const visible = parsedData.availableFilters.filter(f => !activeFilters.includes(f) && f.toLowerCase().includes(filterInput.toLowerCase()));
+        if (visible.length > 0 && filterInput.trim() !== '') {
+            const toAdd = visible[0];
+            setActiveFilters([...activeFilters, toAdd]);
+            setFilterInput('');
+        }
+      };
+
+      const filteredEvents = useMemo(() => {
+        const query = searchQuery.toLowerCase();
+        const hasQuery = query.length > 0;
+        const hasActiveFilters = activeFilters.length > 0;
+
+        if (!hasQuery && !hasActiveFilters) return parsedData.events;
+        
+        return parsedData.events.filter(event => {
+            let matchesSearch = true;
+            let matchesFilter = true;
+
+            if (hasQuery) {
+                const siteMatch = event.site.toLowerCase().includes(query);
+                const notesMatch = event.notes.toLowerCase().includes(query);
+                const staffMatch = event.assigned.some(s => 
+                    s.fullName.toLowerCase().includes(query) || 
+                    s.position.toLowerCase().includes(query) ||
+                    (s.phone && s.phone.includes(query))
+                );
+                matchesSearch = siteMatch || notesMatch || staffMatch;
+            }
+
+            if (hasActiveFilters) {
+                matchesFilter = activeFilters.some(filter => 
+                    event.allTagsArray ? event.allTagsArray.includes(filter) : (event.allTags && event.allTags.has(filter))
+                );
+            }
+
+            return matchesSearch && matchesFilter;
+        });
+      }, [parsedData.events, searchQuery, activeFilters]);
+
+      // Computed Views
+      const dailyViewData = useMemo(() => {
+          const grouped = {};
+          
+          const today = new Date();
+          today.setHours(0,0,0,0);
+          const todayTime = today.getTime();
+
+          filteredEvents.forEach(event => {
+              if (!grouped[event.date]) {
+                  grouped[event.date] = {
+                      dateStr: event.date,
+                      timestamp: event.timestamp,
+                      events: [],
+                      isFullyStaffed: true
+                  };
+              }
+              grouped[event.date].events.push(event);
+              if (event.open.length > 0) {
+                  grouped[event.date].isFullyStaffed = false;
+              }
+          });
+          
+          let sorted = Object.values(grouped).sort((a, b) => a.timestamp - b.timestamp);
+          
+          if (!showPastEvents) {
+             sorted = sorted.filter(dayGroup => dayGroup.timestamp >= todayTime - 86400000);
+          }
+          
+          return sorted;
+      }, [filteredEvents, showPastEvents]);
+
+      const categoricalViewData = useMemo(() => {
+          const accounts = [];
+          const mainParties = [];
+          
+          filteredEvents.forEach(event => {
+              if (event.isAccount) accounts.push(event);
+              else mainParties.push(event);
+          });
+
+          accounts.sort((a, b) => a.timestamp - b.timestamp);
+          mainParties.sort((a, b) => a.timestamp - b.timestamp);
+
+          return { accounts, mainParties };
+      }, [filteredEvents]);
+
+
+      const StaffRow = ({ staff, isOpen, eventId }) => {
+        const [expanded, setExpanded] = useState(false);
+
+        if (isOpen) {
+            return (
+                <div className="border-b border-rose-500/20 py-3 last:border-0 bg-rose-500/5 hover:bg-rose-500/10 transition-colors rounded-lg px-3 -mx-3 mb-1 border border-dashed">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400">
+                                <i className="ph-fill ph-warning"></i>
+                            </div>
+                            <div>
+                                <p className="font-bold text-rose-400 text-sm tracking-wide">OPEN SHIFT</p>
+                                <p className="text-xs text-rose-300/70 font-medium tracking-wide mt-0.5">{staff.position}</p>
+                            </div>
+                        </div>
+                        <div className="text-xs font-bold bg-rose-500/20 text-rose-300 px-2.5 py-1 rounded-md border border-rose-500/30">
+                            {staff.startTime} - {staff.endTime}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const shiftKey = `${eventId}::${staff.fullName}::${staff.startTime}`;
+
+        const copyDetails = (e) => {
+          e.stopPropagation();
+          const details = `Name: ${staff.fullName}\nPhone: ${staff.phone || 'N/A'}\nRole: ${staff.position}\nEmail: ${staff.email || 'N/A'}`;
+          navigator.clipboard.writeText(details).then(() => {
+            showNotification('Staff details copied!');
+          }).catch(err => console.error("Clipboard copy failed: ", err));
+        };
+
+        const cleanPhone = String(staff.phone || '').replace(/\D/g, '');
+        const currentNote = staffNotes[shiftKey] || '';
+
+        return (
+          <div className="border-b border-white/5 py-3 last:border-0 hover:bg-white/[0.02] transition-colors rounded-lg px-2 -mx-2 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-bold text-zinc-100 text-sm flex items-center gap-1.5">
+                    {staff.fullName}
+                    {currentNote.trim() !== '' && (
+                        <i className="ph-fill ph-notebook text-yellow-400 drop-shadow-[0_0_5px_rgba(250,204,21,0.5)]" title="Note attached"></i>
+                    )}
+                </p>
+                <p className="text-xs text-yellow-400/90 font-medium tracking-wide mt-0.5">{staff.position}</p>
+              </div>
+              <div className="flex gap-2 items-center">
+                {staff.phone && (
+                  <p className="text-xs text-zinc-400 flex items-center gap-1.5 mr-2 font-mono bg-zinc-900/50 px-2 py-1 rounded-md border border-white/10 hidden sm:flex">
+                    <i className="ph ph-phone"></i> {staff.phone}
+                  </p>
+                )}
+                {cleanPhone && (
+                  <a 
+                    href={`https://voice.google.com/u/0/messages?recipient=${cleanPhone}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-8 h-8 bg-zinc-800 text-zinc-300 hover:bg-yellow-400 hover:text-black hover:shadow-[0_0_15px_rgba(250,204,21,0.5)] rounded-full transition-all duration-300 flex items-center justify-center border border-white/10"
+                    title="Message via Google Voice"
+                  >
+                    <i className="ph-fill ph-chat-text text-lg"></i>
+                  </a>
+                )}
+                <button 
+                  className={`w-8 h-8 rounded-full transition-all duration-300 flex items-center justify-center border ${expanded ? 'bg-yellow-400 text-black border-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.3)]' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700 border-white/10'}`}
+                  title="Staff Info"
+                >
+                  <i className={`ph-bold ph-caret-${expanded ? "up" : "down"} text-sm`}></i>
+                </button>
+              </div>
+            </div>
+            
+            {expanded && (
+              <div className="mt-4 mb-2 glass-panel p-4 rounded-xl text-sm animate-slide-up cursor-default" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-start mb-3 border-b border-white/10 pb-2">
+                  <h5 className="font-bold text-yellow-400 flex items-center gap-2">
+                    <i className="ph-fill ph-identification-card text-lg"></i> Profile Details
+                  </h5>
+                  <button onClick={copyDetails} className="text-xs text-zinc-300 bg-zinc-800 hover:bg-zinc-700 border border-white/10 px-3 py-1.5 rounded-lg font-semibold hover:text-white transition-all flex items-center gap-1.5">
+                    <i className="ph-bold ph-copy"></i> Copy All
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-zinc-300">
+                  <div>
+                    <span className="text-zinc-500 uppercase tracking-wider text-[10px] block mb-0.5 font-bold">Shift Time</span>
+                    <span className="font-medium text-zinc-100 bg-zinc-900 border border-white/10 px-2 py-0.5 rounded inline-block">{staff.startTime || '?'} - {staff.endTime || '?'}</span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-500 uppercase tracking-wider text-[10px] block mb-0.5 font-bold">Phone</span>
+                    <span className="font-medium text-zinc-100">{staff.phone || 'N/A'}</span>
+                  </div>
+                  <div className="sm:col-span-2 pt-1">
+                    <span className="text-zinc-500 uppercase tracking-wider text-[10px] block mb-0.5 font-bold">System Roles</span>
+                    <span className="font-medium text-zinc-400 text-[10px]">{staff.roles || 'N/A'}</span>
+                  </div>
+                  
+                  {/* Private Staff Notes Textarea */}
+                  <div className="sm:col-span-2 pt-2 mt-1 border-t border-white/5">
+                    <span className="text-zinc-500 uppercase tracking-wider text-[10px] block mb-1.5 font-bold flex items-center gap-1">
+                      <i className="ph-fill ph-notebook text-zinc-400"></i> Private Shift Notes
+                    </span>
+                    <textarea
+                      value={currentNote}
+                      onChange={(e) => updateStaffNote(shiftKey, e.target.value)}
+                      placeholder="Add private notes about this staff member's specific shift (saves to this browser)..."
+                      className="w-full bg-zinc-950/50 border border-white/10 rounded-lg p-2.5 text-xs text-zinc-300 focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 resize-y min-h-[60px] custom-scrollbar transition-all shadow-inner"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      };
+
+      const EventCard = ({ event }) => {
+        const [showNotes, setShowNotes] = useState(false);
+        const [showStaff, setShowStaff] = useState(true);
+        
+        const totalSlots = event.assigned.length + event.open.length;
+        const assignedCount = event.assigned.length;
+        const openCount = event.open.length;
+        const percentStaffed = totalSlots === 0 ? 0 : (assignedCount / totalSlots) * 100;
+        
+        const hasOpenings = openCount > 0;
+
+        return (
+          <div className={`glass-panel rounded-2xl overflow-hidden mb-6 group transition-all duration-500 ${hasOpenings ? 'border-rose-500/40 shadow-[0_0_20px_rgba(244,63,94,0.1)] hover:shadow-[0_0_30px_rgba(244,63,94,0.2)]' : 'hover:border-yellow-500/40 hover:shadow-[0_0_30px_rgba(250,204,21,0.15)]'}`}>
+            <div className="p-5 border-b border-white/5 relative overflow-hidden">
+              <div className={`absolute top-0 right-0 w-32 h-32 rounded-full blur-[50px] pointer-events-none transition-colors ${hasOpenings ? 'bg-rose-500/20 group-hover:bg-rose-500/30' : 'bg-emerald-500/10 group-hover:bg-emerald-500/20'}`}></div>
+              
+              <div className="relative z-10 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-4">
+                <div>
+                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                        {event.isAccount ? (
+                            <span className="text-[10px] font-black uppercase tracking-widest text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded border border-blue-400/20">{event.schedule}</span>
+                        ) : (
+                            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded border border-emerald-400/20">{event.schedule}</span>
+                        )}
+                        {viewMode === 'categories' && (
+                             <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded border border-white/10 flex items-center gap-1"><i className="ph-fill ph-calendar-blank"></i> {event.date}</span>
+                        )}
+                    </div>
+                    <h3 className="font-black text-white text-xl flex items-start gap-2.5 max-w-xl">
+                        <i className={`ph-fill ph-map-pin mt-1 ${hasOpenings ? 'text-rose-400 drop-shadow-[0_0_8px_rgba(244,63,94,0.5)]' : 'text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]'}`}></i>
+                        <span className="leading-tight">{event.site}</span>
+                    </h3>
+                </div>
+                
+                <div className={`flex flex-col items-end gap-1.5 shrink-0 bg-zinc-950/50 p-2.5 rounded-xl border ${hasOpenings ? 'border-rose-500/30' : 'border-emerald-500/20'}`}>
+                    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+                        {hasOpenings ? (
+                            <span className="text-rose-400 flex items-center gap-1.5"><i className="ph-fill ph-warning-circle"></i> {openCount} {openCount === 1 ? 'Opening' : 'Openings'}</span>
+                        ) : (
+                            <span className="text-emerald-400 flex items-center gap-1.5"><i className="ph-fill ph-check-circle"></i> Fully Staffed</span>
+                        )}
+                        <span className="text-zinc-500">|</span>
+                        <span className="text-zinc-300">{assignedCount}/{totalSlots} Filled</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full transition-all duration-1000 ${hasOpenings ? 'bg-rose-500' : 'bg-emerald-400'}`} style={{width: `${percentStaffed}%`}}></div>
+                    </div>
+                </div>
+              </div>
+              
+              {event.notes && (
+                <div className="relative z-10 mt-4">
+                  <button 
+                    onClick={() => setShowNotes(!showNotes)}
+                    className="w-full flex items-center justify-between text-xs font-bold uppercase tracking-wider text-yellow-500/80 bg-zinc-950/50 hover:bg-zinc-900 border border-yellow-500/20 px-4 py-2.5 rounded-xl transition-all"
+                  >
+                    <span className="flex items-center gap-2"><i className="ph-fill ph-file-text text-lg"></i> Event Notes & Info</span>
+                    <i className={`ph-bold ph-caret-${showNotes ? 'up' : 'down'} text-lg`}></i>
+                  </button>
+                  
+                  {showNotes && (
+                    <div className="mt-2 px-4 py-3 bg-zinc-950/80 border border-white/10 rounded-xl text-sm text-zinc-300 whitespace-pre-wrap font-mono text-xs leading-relaxed max-h-[300px] overflow-y-auto custom-scrollbar shadow-inner animate-slide-up">
+                      {event.notes}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            <div className="bg-zinc-950/40 backdrop-blur-sm">
+              <button 
+                onClick={() => setShowStaff(!showStaff)}
+                className="w-full px-5 py-3 flex items-center justify-between hover:bg-white/[0.03] transition-colors border-b border-white/5"
+              >
+                <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+                  <i className="ph-fill ph-users text-zinc-500"></i> Event Roster
+                </h4>
+                <i className={`ph-bold ph-caret-${showStaff ? "up" : "down"} text-zinc-500 text-sm`}></i>
+              </button>
+              
+              {showStaff && (
+                <div className="p-4 px-5">
+                  {event.open.map((shift, idx) => (
+                    <StaffRow key={`open-${idx}`} staff={shift} isOpen={true} eventId={event.id} />
+                  ))}
+                  {event.assigned.map((staff, idx) => (
+                    <StaffRow key={`assigned-${idx}`} staff={staff} isOpen={false} eventId={event.id} />
+                  ))}
+                  {totalSlots === 0 && (
+                      <p className="text-sm text-zinc-500 italic text-center py-2">No shifts defined for this event.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      };
+        const visibleInactiveFilters = parsedData.availableFilters.filter(f => !activeFilters.includes(f) && f.toLowerCase().includes(filterInput.toLowerCase()));
+
+      return (
+        <div className="pb-32">
+          <Toast message={toastMsg} isVisible={showToast} />
+          
+          {/* Header & Uploader (Sticky Glass) */}
+          <div className="glass-header sticky top-0 z-40 shadow-xl px-4 py-4 sm:py-6 border-b border-yellow-500/20 transition-transform duration-300 transform translate-y-0" id="main-header">
+            <div className="max-w-4xl mx-auto">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4 sm:mb-6">
+                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white flex items-center gap-3 tracking-tighter">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-yellow-400 rounded-xl flex items-center justify-center text-black shadow-[0_0_20px_rgba(250,204,21,0.4)]">
+                    <i className="ph-fill ph-calendar-check text-xl sm:text-2xl"></i>
+                    </div>
+                    WIW Visualizer
+                </h1>
+                
+                {/* View Toggle */}
+                {parsedData.events.length > 0 && (
+                    <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                        <div className="flex p-1 bg-zinc-900/80 rounded-xl border border-white/10 shadow-inner">
+                            <button 
+                                onClick={() => setViewMode('daily')}
+                                className={`flex-1 sm:flex-none px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-1 sm:gap-2 ${viewMode === 'daily' ? 'bg-yellow-400 text-black shadow-md' : 'text-zinc-400 hover:text-white'}`}
+                            >
+                                <i className="ph-fill ph-calendar-grid"></i> Daily View
+                            </button>
+                            <button 
+                                onClick={() => setViewMode('categories')}
+                                className={`flex-1 sm:flex-none px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-1 sm:gap-2 ${viewMode === 'categories' ? 'bg-yellow-400 text-black shadow-md' : 'text-zinc-400 hover:text-white'}`}
+                            >
+                                <i className="ph-fill ph-folders"></i> Categories
+                            </button>
+                        </div>
+                        <button 
+                            onClick={() => setShowPastEvents(!showPastEvents)}
+                            className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-1 sm:gap-2 border ${showPastEvents ? 'bg-zinc-800 text-white border-white/20' : 'bg-zinc-950/50 text-zinc-500 border-white/5 hover:text-zinc-300'}`}
+                        >
+                            <i className={`ph-fill ph-clock-counter-clockwise`}></i> 
+                            <span className="hidden sm:inline">{showPastEvents ? 'Hiding Past' : 'Show Past'}</span>
+                            <span className="sm:hidden">{showPastEvents ? 'Hide Past' : 'Past'}</span>
+                        </button>
+                    </div>
+                )}
+              </div>
+              
+              {showDataSync && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4 animate-slide-up">
+                    
+                    <div 
+                    className={`relative group rounded-2xl border border-dashed p-5 text-center transition-all duration-300 ${
+                        dragActiveSchedule 
+                        ? 'border-yellow-400 bg-yellow-400/10 shadow-[0_0_30px_rgba(250,204,21,0.2)]' 
+                        : scheduleFile 
+                            ? 'border-emerald-500/50 bg-emerald-500/10' 
+                            : 'border-white/20 hover:border-yellow-400/50 hover:bg-white/5 bg-zinc-900/50 backdrop-blur-md'
+                    }`}
+                    onDragEnter={(e) => handleDrag(e, 'schedule')}
+                    onDragLeave={(e) => handleDrag(e, 'schedule')}
+                    onDragOver={(e) => handleDrag(e, 'schedule')}
+                    onDrop={(e) => handleDrop(e, 'schedule')}
+                    >
+                    <input type="file" accept=".xlsx" onChange={(e) => handleFileChange(e, 'schedule')} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"/>
+                    
+                    {scheduleFile ? (
+                        <div className="flex flex-col items-center gap-1 relative z-20 pointer-events-none">
+                        <i className="ph-fill ph-check-circle text-emerald-400 text-3xl mb-1 drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]"></i>
+                        <h3 className="font-bold text-zinc-100 text-sm">Schedule Ready</h3>
+                        <p className="text-xs text-zinc-400 truncate max-w-[200px]">{scheduleFile.name}</p>
+                        <button onClick={(e) => {e.preventDefault(); removeFile('schedule')}} className="mt-2 px-3 py-1 bg-zinc-950 hover:bg-rose-500/20 text-xs font-semibold text-rose-400 border border-rose-500/30 rounded-lg transition-colors pointer-events-auto flex items-center gap-1">
+                            <i className="ph-bold ph-x"></i> Clear
+                        </button>
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center gap-2 pointer-events-none">
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${dragActiveSchedule ? 'bg-yellow-400 text-black shadow-[0_0_15px_rgba(250,204,21,0.5)]' : 'bg-zinc-800 text-zinc-400 group-hover:bg-yellow-400/20 group-hover:text-yellow-400'}`}>
+                            <i className="ph-fill ph-file-xls text-2xl"></i>
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-zinc-200 text-sm">Schedule</h3>
+                            <p className="text-xs text-zinc-500 mt-0.5">Drag & Drop or <span className="text-yellow-400 font-semibold group-hover:underline">Browse</span></p>
+                        </div>
+                        </div>
+                    )}
+                    </div>
+
+                    <div 
+                    className={`relative group rounded-2xl border border-dashed p-5 text-center transition-all duration-300 ${
+                        dragActiveUsers 
+                        ? 'border-yellow-400 bg-yellow-400/10 shadow-[0_0_30px_rgba(250,204,21,0.2)]' 
+                        : usersFile 
+                            ? 'border-emerald-500/50 bg-emerald-500/10' 
+                            : 'border-white/20 hover:border-yellow-400/50 hover:bg-white/5 bg-zinc-900/50 backdrop-blur-md'
+                    }`}
+                    onDragEnter={(e) => handleDrag(e, 'users')}
+                    onDragLeave={(e) => handleDrag(e, 'users')}
+                    onDragOver={(e) => handleDrag(e, 'users')}
+                    onDrop={(e) => handleDrop(e, 'users')}
+                    >
+                    <input type="file" accept=".xlsx" onChange={(e) => handleFileChange(e, 'users')} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"/>
+                    
+                    {usersFile ? (
+                        <div className="flex flex-col items-center gap-1 relative z-20 pointer-events-none">
+                        <i className="ph-fill ph-check-circle text-emerald-400 text-3xl mb-1 drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]"></i>
+                        <h3 className="font-bold text-zinc-100 text-sm">Users Ready</h3>
+                        <p className="text-xs text-zinc-400 truncate max-w-[200px]">{usersFile.name}</p>
+                        <button onClick={(e) => {e.preventDefault(); removeFile('users')}} className="mt-2 px-3 py-1 bg-zinc-950 hover:bg-rose-500/20 text-xs font-semibold text-rose-400 border border-rose-500/30 rounded-lg transition-colors pointer-events-auto flex items-center gap-1">
+                            <i className="ph-bold ph-x"></i> Clear
+                        </button>
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center gap-2 pointer-events-none">
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${dragActiveUsers ? 'bg-yellow-400 text-black shadow-[0_0_15px_rgba(250,204,21,0.5)]' : 'bg-zinc-800 text-zinc-400 group-hover:bg-yellow-400/20 group-hover:text-yellow-400'}`}>
+                            <i className="ph-fill ph-users text-2xl"></i>
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-zinc-200 text-sm">Users Roster</h3>
+                            <p className="text-xs text-zinc-500 mt-0.5">Drag & Drop or <span className="text-yellow-400 font-semibold group-hover:underline">Browse</span></p>
+                        </div>
+                        </div>
+                    )}
+                    </div>
+                </div>
+              )}
+              
+              {error && (
+                <div className="mb-4 p-4 bg-rose-500/10 text-rose-400 rounded-xl text-sm flex items-start gap-3 border border-rose-500/20 backdrop-blur-md shadow-lg animate-slide-up">
+                  <i className="ph-fill ph-warning-circle text-xl mt-0.5 shrink-0"></i>
+                  <div className="font-medium leading-relaxed">{error}</div>
+                </div>
+              )}
+
+              {showDataSync ? (
+                <div className="flex gap-3 animate-slide-up">
+                    <button
+                        onClick={processFiles}
+                        disabled={isProcessing || (!scheduleFile && !usersFile)}
+                        className="flex-1 bg-yellow-400 hover:bg-yellow-300 text-zinc-950 font-black py-4 px-6 rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.3)] hover:shadow-[0_0_30px_rgba(250,204,21,0.6)] transition-all disabled:opacity-30 disabled:hover:bg-yellow-400 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm uppercase tracking-widest active:scale-[0.98] border border-yellow-300"
+                    >
+                        {isProcessing ? (
+                        <><i className="ph-bold ph-spinner animate-spin text-lg"></i> Syncing...</>
+                        ) : (
+                        <><i className="ph-fill ph-arrows-merge text-lg"></i> Synchronize Data</>
+                        )}
+                    </button>
+                    {parsedData.events.length > 0 && (
+                        <button onClick={() => setShowDataSync(false)} className="px-6 py-4 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-bold rounded-xl border border-white/10 transition-colors uppercase tracking-widest text-sm shrink-0">
+                            Cancel
+                        </button>
+                    )}
+                </div>
+              ) : (
+                <div className="flex justify-between items-center mt-4 bg-zinc-900/50 backdrop-blur-md border border-white/5 p-3 rounded-2xl animate-slide-up">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.2)]">
+                            <i className="ph-fill ph-database text-lg"></i>
+                        </div>
+                        <div>
+                            <p className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
+                                Local Storage Active
+                            </p>
+                            <p className="text-[10px] text-zinc-500 mt-0.5 tracking-wide">Tracking {parsedData.events.length} Events & {Object.keys(parsedData.usersMap).length} Staff</p>
+                        </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                        {showWipeConfirm ? (
+                            <div className="flex items-center gap-2 animate-slide-up">
+                                <span className="text-[10px] text-rose-400 font-bold px-2">Wipe Database?</span>
+                                <button onClick={() => {
+                                    setParsedData({ events: [], availableFilters: [], usersMap: {} });
+                                    localStorage.removeItem('wiw_dashboard_data');
+                                    setShowDataSync(true);
+                                    setShowWipeConfirm(false);
+                                    showNotification('Database cleared.');
+                                }} className="text-xs text-white bg-rose-600 hover:bg-rose-500 px-3 py-1.5 rounded-lg font-bold transition-all shadow-[0_0_10px_rgba(225,29,72,0.4)]">Yes</button>
+                                <button onClick={() => setShowWipeConfirm(false)} className="text-xs text-zinc-300 bg-zinc-800 hover:bg-zinc-700 border border-white/10 px-3 py-1.5 rounded-lg font-bold transition-colors">No</button>
+                            </div>
+                        ) : (
+                            <>
+                                <button onClick={() => setShowDataSync(true)} className="text-[10px] sm:text-xs text-yellow-400 bg-yellow-400/10 hover:bg-yellow-400/20 border border-yellow-400/30 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl font-bold transition-colors flex items-center gap-1.5">
+                                    <i className="ph-bold ph-plus"></i> <span className="hidden sm:inline">Add Data</span><span className="sm:hidden">Add</span>
+                                </button>
+                                <button onClick={() => setShowWipeConfirm(true)} className="text-[10px] sm:text-xs text-zinc-400 hover:text-rose-400 bg-zinc-950 hover:bg-rose-500/10 border border-white/5 hover:border-rose-500/20 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl font-bold transition-all flex items-center gap-1.5" title="Clear Dashboard">
+                                    <i className="ph-bold ph-trash"></i>
+                                </button>
+                            </>
+                        )}
+                    </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="max-w-4xl mx-auto px-4 pt-8">
+            
+            {/* Dynamic Filters & Search */}
+            {parsedData.events.length > 0 && (
+              <div className="mb-6 sm:mb-10 sticky top-[160px] sm:top-[200px] z-30 transition-all duration-300" id="filter-bar">
+                <div className="glass-panel p-3 sm:p-4 rounded-2xl shadow-2xl relative overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-r from-yellow-500/5 to-transparent pointer-events-none"></div>
+                  
+                  <div className="relative z-10 flex flex-col gap-3 sm:gap-4">
+                    {/* Search Bar */}
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 sm:pl-4 flex items-center pointer-events-none">
+                        <i className="ph-bold ph-magnifying-glass text-zinc-400 text-base sm:text-lg"></i>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Search events, locations, staff names, or notes..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="block w-full pl-9 sm:pl-11 pr-4 py-2.5 sm:py-3.5 border border-white/10 rounded-xl bg-zinc-950/50 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 text-xs sm:text-sm shadow-inner transition-all"
+                      />
+                      {searchQuery && (
+                        <button onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 pr-3 sm:pr-4 flex items-center text-zinc-500 hover:text-zinc-300">
+                           <i className="ph-fill ph-x-circle text-base sm:text-lg"></i>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Role & Schedule Filters */}
+                    {parsedData.availableFilters.length > 0 && (
+                      <div>
+                        <p className="text-[9px] sm:text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 sm:mb-3 flex items-center gap-1">
+                          <i className="ph-fill ph-funnel"></i> Filter by Role or Schedule
+                        </p>
+                        
+                        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 items-start">
+                            {/* Quick Add Filter Form */}
+                            <form onSubmit={handleFilterSubmit} className="relative w-full sm:w-56 shrink-0">
+                                <i className="ph-bold ph-plus absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-xs sm:text-base"></i>
+                                <input
+                                  type="text"
+                                  placeholder="Quick add filter..."
+                                  value={filterInput}
+                                  onChange={(e) => setFilterInput(e.target.value)}
+                                  className="w-full bg-zinc-950 border border-white/10 text-white text-[10px] sm:text-xs font-medium rounded-xl pl-7 sm:pl-8 pr-3 py-2 sm:py-2.5 focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 focus:outline-none transition-all shadow-inner"
+                                />
+                            </form>
+
+                            {/* Wrapping Pills Container */}
+                            <div className="flex flex-wrap gap-1.5 sm:gap-2 max-h-[80px] sm:max-h-[140px] overflow-y-auto pr-2 custom-scrollbar w-full items-center py-1">
+                              {/* Render Active Filters First */}
+                              {activeFilters.map(filter => (
+                                <button
+                                    key={filter}
+                                    onClick={() => toggleFilter(filter)}
+                                    className="whitespace-nowrap flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full border text-[10px] sm:text-[11px] font-bold transition-all duration-300 bg-yellow-400 text-black border-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.4)] hover:bg-yellow-500"
+                                >
+                                    {filter} <i className="ph-bold ph-x text-[9px] sm:text-[10px]"></i>
+                                </button>
+                              ))}
+                              
+                              {/* Render Matching Inactive Filters */}
+                              {visibleInactiveFilters.map(filter => (
+                                <button
+                                    key={filter}
+                                    onClick={() => toggleFilter(filter)}
+                                    className="whitespace-nowrap px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full border text-[10px] sm:text-[11px] font-bold transition-all duration-300 bg-zinc-900/50 text-zinc-400 border-white/10 hover:border-yellow-500/50 hover:text-yellow-400 hover:bg-yellow-500/5"
+                                >
+                                    {filter}
+                                </button>
+                              ))}
+
+                              {/* Empty State for Quick Filter */}
+                              {visibleInactiveFilters.length === 0 && activeFilters.length === 0 && (
+                                <span className="text-[10px] sm:text-xs text-zinc-600 italic px-2">No matching filters found.</span>
+                              )}
+                            </div>
+                        </div>
+
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Empty State */}
+            {isProcessing === false && parsedData.events.length === 0 && (
+              <div className="text-center py-32 text-zinc-500 animate-slide-up">
+                <div className="w-24 h-24 bg-zinc-900/50 border border-white/5 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner relative">
+                    <div className="absolute inset-0 rounded-full border border-yellow-500/20 animate-ping opacity-20"></div>
+                    <i className="ph-duotone ph-calendar-magnifying-glass text-5xl text-yellow-500/30"></i>
+                </div>
+                <h3 className="font-bold text-xl text-zinc-300 mb-2">Awaiting Data</h3>
+                <p className="text-sm font-medium max-w-sm mx-auto">Drag and drop your Schedule and User lists above to visualize your operation.</p>
+              </div>
+            )}
+
+            {/* No Results State */}
+            {parsedData.events.length > 0 && filteredEvents.length === 0 && (
+                <div className="text-center py-20 text-zinc-500 animate-slide-up bg-zinc-900/30 rounded-3xl border border-white/5 border-dashed">
+                    <i className="ph-duotone ph-ghost text-5xl text-yellow-500/30 mb-4"></i>
+                    <h3 className="font-bold text-lg text-zinc-300 mb-1">No matches found</h3>
+                    <p className="text-sm">Try adjusting your search or filters.</p>
+                </div>
+            )}
+
+            {/* Daily View Rendering */}
+            {viewMode === 'daily' && dailyViewData.map((dayGroup, i) => (
+                <div key={dayGroup.dateStr} className="mb-8 animate-slide-up" style={{animationDelay: `${i * 0.05}s`}}>
+                    <div 
+                        className="sticky top-[100px] sm:top-[120px] z-20 flex items-center gap-3 sm:gap-4 mb-4 pt-4 pb-2 bg-zinc-950/90 backdrop-blur-xl border-b border-white/10 -mx-4 px-4 sm:mx-0 sm:px-0 cursor-pointer group transition-all duration-300"
+                        onClick={() => setCollapsedDates(prev => ({...prev, [dayGroup.dateStr]: !prev[dayGroup.dateStr]}))}
+                        id={`date-header-${i}`}
+                    >
+                        <div className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center text-black font-black transition-all duration-500 ${dayGroup.isFullyStaffed ? 'bg-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.4)] group-hover:scale-110' : 'bg-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.4)] group-hover:scale-110'}`}>
+                            <i className={`ph-bold ${dayGroup.isFullyStaffed ? 'ph-check' : 'ph-calendar'} text-xl`}></i>
+                        </div>
+                        <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight group-hover:text-yellow-400 transition-colors truncate">{dayGroup.dateStr}</h2>
+                        
+                        <div className="ml-auto flex items-center gap-2 sm:gap-3 shrink-0">
+                            <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full border transition-colors ${dayGroup.isFullyStaffed ? 'bg-emerald-400/10 text-emerald-400 border-emerald-400/30 shadow-[0_0_10px_rgba(52,211,153,0.2)]' : 'bg-zinc-900 text-zinc-400 border-white/10'}`}>
+                                {dayGroup.events.length} <span className="hidden sm:inline">Event{dayGroup.events.length !== 1 ? 's' : ''}</span>
+                                {dayGroup.isFullyStaffed && <span className="hidden sm:inline"> • Staffed</span>}
+                            </span>
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center bg-zinc-900 border border-white/10 group-hover:bg-white/10 transition-all text-zinc-400">
+                                <i className={`ph-bold ph-caret-down transition-transform duration-500 ${collapsedDates[dayGroup.dateStr] ? '-rotate-90' : 'rotate-0'}`}></i>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className={`grid-accordion ${!collapsedDates[dayGroup.dateStr] ? 'expanded' : ''}`}>
+                        <div className="grid-accordion-inner relative">
+                            {/* Day timeline connector line */}
+                            <div className="absolute top-0 bottom-0 left-5 w-0.5 bg-gradient-to-b from-white/10 to-transparent hidden sm:block"></div>
+                            
+                            <div className="space-y-4 pt-2">
+                                {dayGroup.events.map((event) => (
+                                    <div key={event.id} className="relative z-10 pl-0 sm:pl-14">
+                                        {/* Timeline dot */}
+                                        <div className={`absolute left-[17px] top-8 w-2 h-2 rounded-full hidden sm:block ${event.open.length === 0 ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.8)]'}`}></div>
+                                        <EventCard event={event} />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ))}
+
+            {/* Categories View Rendering */}
+            {viewMode === 'categories' && (
+                <div className="animate-slide-up">
+                    {categoricalViewData.mainParties.length > 0 && (
+                        <div className="mb-12">
+                            <div className="flex items-center justify-between cursor-pointer border-b border-white/10 pb-3 mb-6" onClick={() => setCollapsedCategories(prev => ({...prev, mainParties: !prev.mainParties}))}>
+                                <h2 className="text-2xl font-black text-white flex items-center gap-3">
+                                    <i className="ph-fill ph-star text-emerald-400 drop-shadow-[0_0_10px_rgba(52,211,153,0.5)]"></i>
+                                    Main Parties
+                                    <span className="bg-white/10 text-zinc-300 text-xs py-1 px-3 rounded-full ml-3 font-semibold border border-white/10 shadow-inner">{categoricalViewData.mainParties.length} Events</span>
+                                </h2>
+                                <i className={`ph-bold ph-caret-${collapsedCategories.mainParties ? 'down' : 'up'} text-zinc-400 text-xl`}></i>
+                            </div>
+                            
+                            {!collapsedCategories.mainParties && (
+                                <div className="space-y-6">
+                                    {categoricalViewData.mainParties.map(event => <EventCard key={event.id} event={event} />)}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {categoricalViewData.accounts.length > 0 && (
+                        <div className="mb-12">
+                            <div className="flex items-center justify-between cursor-pointer border-b border-white/10 pb-3 mb-6" onClick={() => setCollapsedCategories(prev => ({...prev, accounts: !prev.accounts}))}>
+                                <h2 className="text-2xl font-black text-white flex items-center gap-3">
+                                    <i className="ph-fill ph-buildings text-blue-400 drop-shadow-[0_0_10px_rgba(96,165,250,0.5)]"></i>
+                                    Corporate Accounts
+                                    <span className="bg-white/10 text-zinc-300 text-xs py-1 px-3 rounded-full ml-3 font-semibold border border-white/10 shadow-inner">{categoricalViewData.accounts.length} Events</span>
+                                </h2>
+                                <i className={`ph-bold ph-caret-${collapsedCategories.accounts ? 'down' : 'up'} text-zinc-400 text-xl`}></i>
+                            </div>
+                            
+                            {!collapsedCategories.accounts && (
+                                <div className="space-y-6">
+                                    {categoricalViewData.accounts.map(event => <EventCard key={event.id} event={event} />)}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+
+          </div>
+        </div>
+      );
+    }
+
+    let lastScrollY = window.scrollY;
+    window.addEventListener('scroll', () => {
+        const header = document.getElementById('main-header');
+        const filterBar = document.getElementById('filter-bar');
+        
+        if (header && filterBar) {
+            if (window.scrollY > lastScrollY && window.scrollY > 100) {
+                // Scrolling down
+                header.classList.add('-translate-y-full');
+                filterBar.style.top = '10px'; // Move filter bar up
+                
+                // Adjust sticky date headers if in daily view
+                document.querySelectorAll('[id^="date-header-"]').forEach(el => {
+                   el.style.top = '10px'; 
+                });
+            } else {
+                // Scrolling up
+                header.classList.remove('-translate-y-full');
+                // Calculate original sticky position based on mobile vs desktop approx height
+                filterBar.style.top = window.innerWidth < 640 ? '160px' : '200px'; 
+                
+                document.querySelectorAll('[id^="date-header-"]').forEach(el => {
+                   el.style.top = window.innerWidth < 640 ? '100px' : '120px'; 
+                });
+            }
+        }
+        lastScrollY = window.scrollY;
+    });
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
