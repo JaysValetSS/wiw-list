@@ -35,6 +35,8 @@ ever uploaded anywhere.
 Once data is loaded you'll see the header shown above:
 
 - **Daily View / Categories** toggle — switch how events are grouped (see below).
+- **Light Mode / Dark Mode** button — switch the whole app's theme. Your choice is
+  remembered for next time.
 - **Show Past** — Daily View hides past days by default; toggle this to bring them back.
 - **Search bar** — filters events by site name, staff name, position, or event notes as
   you type.

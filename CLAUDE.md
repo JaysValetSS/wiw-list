@@ -83,6 +83,27 @@ reloading it in a browser.
 - `wiw_guide_seen` — presence alone (any value) means the How-To guide has been
   dismissed once and won't auto-open on load again; the header's "How to Use" button
   reopens it manually regardless of this flag.
+- `wiw_theme` — `'dark'` (default) or `'light'`. Mirrored onto
+  `<html data-theme="...">` by an effect in `App`; the `<style>` block's light-mode
+  section (search "Light Mode" in `index.html`) reacts to that attribute.
+
+## Light mode
+
+Dark is the default/base look — every existing Tailwind utility class in the JSX
+(`bg-zinc-950`, `text-white`, `border-white/10`, etc.) is written for dark and stays
+that way. Light mode is implemented as a **CSS override layer**, not a JSX rewrite:
+a block of `:root[data-theme="light"] .<utility> { ... !important }` rules near the
+bottom of the `<style>` tag re-targets every neutral-palette (zinc/white/black)
+utility class actually used in the file to a light equivalent, including hover and
+`group-hover` variants. Accent colors (yellow/rose/emerald/blue tints and glow
+shadows) are intentionally left alone — they read fine on both backgrounds, so they
+aren't part of the override list.
+
+**If you add new JSX that uses a neutral zinc/white/black utility class not already
+in that override list, add a matching `:root[data-theme="light"] .<class> {...}`
+rule for it** (escape `/`, `[`, `]`, `.`, `:` in the selector the way Tailwind's
+compiled CSS does) — otherwise that element will silently stay dark-colored when the
+user switches to light mode. Accent-color utility classes don't need this treatment.
 
 ## View modes
 

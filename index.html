@@ -85,6 +85,75 @@
     .grid-accordion-inner {
       overflow: hidden;
     }
+
+    /* ================= Light Mode ================= */
+    /* Dark is the default look (unprefixed styles above). Setting
+       data-theme="light" on <html> flips the base surfaces below.
+       Accent colors (yellow/rose/emerald/blue glows & tints) are left
+       untouched — they read fine on both backgrounds. */
+    :root[data-theme="light"] body {
+      background-color: #fafafa; /* zinc-50 */
+      color: #18181b; /* zinc-900 */
+    }
+
+    :root[data-theme="light"] .glass-panel {
+      background: rgba(255, 255, 255, 0.6);
+      border: 1px solid rgba(161, 98, 7, 0.18); /* yellow-700ish, visible on white */
+      box-shadow: 0 8px 32px 0 rgba(24, 24, 27, 0.08), inset 0 0 0 1px rgba(24, 24, 27, 0.04);
+    }
+
+    :root[data-theme="light"] .glass-header {
+      background: rgba(255, 255, 255, 0.85);
+      border-bottom: 1px solid rgba(161, 98, 7, 0.2);
+    }
+
+    :root[data-theme="light"] .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(24, 24, 27, 0.06);
+    }
+    :root[data-theme="light"] .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(161, 98, 7, 0.3);
+    }
+    :root[data-theme="light"] .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: rgba(161, 98, 7, 0.55);
+    }
+
+    /* Base surface + text utility overrides (see CLAUDE.md "Light mode" for the
+       full inventory this was generated from). Selectors mirror how Tailwind's
+       Play CDN compiles each utility, including pseudo-classes/group-hover, so
+       specificity + !important reliably wins over the unprefixed dark rule. */
+    :root[data-theme="light"] .bg-zinc-950 { background-color: #fafafa !important; }
+    :root[data-theme="light"] .bg-zinc-950\/40 { background-color: rgba(228, 228, 231, 0.55) !important; }
+    :root[data-theme="light"] .bg-zinc-950\/50 { background-color: rgba(228, 228, 231, 0.6) !important; }
+    :root[data-theme="light"] .bg-zinc-950\/80 { background-color: rgba(244, 244, 245, 0.85) !important; }
+    :root[data-theme="light"] .bg-zinc-950\/90 { background-color: rgba(255, 255, 255, 0.9) !important; }
+    :root[data-theme="light"] .bg-zinc-900 { background-color: #f4f4f5 !important; }
+    :root[data-theme="light"] .bg-zinc-900\/30 { background-color: rgba(244, 244, 245, 0.5) !important; }
+    :root[data-theme="light"] .bg-zinc-900\/50 { background-color: rgba(244, 244, 245, 0.65) !important; }
+    :root[data-theme="light"] .bg-zinc-900\/80 { background-color: rgba(228, 228, 231, 0.85) !important; }
+    :root[data-theme="light"] .bg-zinc-800 { background-color: #e4e4e7 !important; }
+    :root[data-theme="light"] .bg-zinc-700 { background-color: #d4d4d8 !important; }
+    :root[data-theme="light"] .hover\:bg-zinc-700:hover { background-color: #d4d4d8 !important; }
+    :root[data-theme="light"] .hover\:bg-zinc-800:hover { background-color: #e4e4e7 !important; }
+    :root[data-theme="light"] .hover\:bg-zinc-900:hover { background-color: #f4f4f5 !important; }
+    :root[data-theme="light"] .bg-white\/10 { background-color: rgba(24, 24, 27, 0.06) !important; }
+    :root[data-theme="light"] .hover\:bg-white\/5:hover { background-color: rgba(24, 24, 27, 0.04) !important; }
+    :root[data-theme="light"] .hover\:bg-white\/\[0\.02\]:hover { background-color: rgba(24, 24, 27, 0.03) !important; }
+    :root[data-theme="light"] .hover\:bg-white\/\[0\.03\]:hover { background-color: rgba(24, 24, 27, 0.045) !important; }
+    :root[data-theme="light"] .group:hover .group-hover\:bg-white\/10 { background-color: rgba(24, 24, 27, 0.06) !important; }
+    :root[data-theme="light"] .from-white\/10 {
+      --tw-gradient-from: rgba(24, 24, 27, 0.1) var(--tw-gradient-from-position, 0%) !important;
+      --tw-gradient-to: rgba(24, 24, 27, 0) var(--tw-gradient-to-position, 100%) !important;
+    }
+    :root[data-theme="light"] .border-white\/5 { border-color: rgba(24, 24, 27, 0.08) !important; }
+    :root[data-theme="light"] .border-white\/10 { border-color: rgba(24, 24, 27, 0.1) !important; }
+    :root[data-theme="light"] .border-white\/20 { border-color: rgba(24, 24, 27, 0.15) !important; }
+    :root[data-theme="light"] .text-white { color: #18181b !important; }
+    :root[data-theme="light"] .hover\:text-white:hover { color: #18181b !important; }
+    :root[data-theme="light"] .text-zinc-100 { color: #18181b !important; }
+    :root[data-theme="light"] .text-zinc-200 { color: #27272a !important; }
+    :root[data-theme="light"] .text-zinc-300 { color: #3f3f46 !important; }
+    :root[data-theme="light"] .hover\:text-zinc-300:hover { color: #3f3f46 !important; }
+    :root[data-theme="light"] .text-zinc-400 { color: #52525b !important; }
   </style>
 </head>
 <body class="antialiased min-h-screen relative selection:bg-yellow-400 selection:text-black">
@@ -270,6 +339,24 @@
       const [error, setError] = useState('');
       const [toastMsg, setToastMsg] = useState('');
       const [showToast, setShowToast] = useState(false);
+
+      // Theme (light/dark, persisted, defaults to dark)
+      const [theme, setTheme] = useState(() => {
+        try {
+          return localStorage.getItem('wiw_theme') || 'dark';
+        } catch(e) {
+          return 'dark';
+        }
+      });
+
+      useEffect(() => {
+        document.documentElement.setAttribute('data-theme', theme);
+        try {
+          localStorage.setItem('wiw_theme', theme);
+        } catch(e) {}
+      }, [theme]);
+
+      const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
 
       // How-To Guide (auto-shows on first visit, reopenable anytime)
       const [showGuide, setShowGuide] = useState(() => {
@@ -943,6 +1030,14 @@
                     >
                         <i className="ph-fill ph-question"></i>
                         <span>How to Use</span>
+                    </button>
+                    <button
+                        onClick={toggleTheme}
+                        className="w-9 h-9 sm:w-auto sm:h-auto shrink-0 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-1 sm:gap-2 border bg-zinc-950/50 text-zinc-300 border-white/10 hover:border-yellow-400/40 hover:text-yellow-400"
+                        title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                    >
+                        <i className={`ph-fill ${theme === 'dark' ? 'ph-sun' : 'ph-moon-stars'} text-base`}></i>
+                        <span className="hidden sm:inline">{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
                     </button>
                 </div>
               </div>
