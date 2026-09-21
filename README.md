@@ -9,6 +9,10 @@ ever uploaded anywhere.
 
 ![WIW Visualizer dashboard, Daily View, showing the search/filter bar and an event card for DIA-Denver International Airport](docs/screenshots/dashboard-daily-view.png)
 
+> **New here?** The tool has a built-in **How to Use** walkthrough with screenshots —
+> it opens automatically the first time you visit, and you can reopen it anytime via
+> the **How to Use** button in the header.
+
 ## Quick start
 
 1. **Export two files from When I Work:**

@@ -24,8 +24,16 @@ reloading it in a browser.
 
 - `1–99`: `<head>` — CDN script tags, Tailwind, custom CSS (`.glass-panel`, `.glass-header`,
   custom scrollbar, `grid-accordion` expand/collapse trick, slide-up animation).
-- `100–113`: `Toast` component.
-- `115–417`: `App` — state, file upload/drag-drop handlers, `processFiles` (the
+- `102–109`: `GUIDE_IMAGES` — base64 `data:` URIs for the How-To guide's screenshots
+  (exported from When I Work). Images are embedded inline, not linked as separate files,
+  to preserve single-file portability. Source PNGs are kept in
+  `docs/screenshots/guide/` and `docs/screenshots/` for regenerating this block if the
+  guide's screenshots ever need updating (re-encode with
+  `base64 -w0 <file>.png` and paste into the relevant `GUIDE_IMAGES` entry).
+- `111–247`: `GUIDE_STEPS` (step content) and `HowToGuide` (the modal component) — the
+  first-visit walkthrough, reopenable via the header's "How to Use" button.
+- `249–259`: `Toast` component.
+- `261–...`: `App` — state, file upload/drag-drop handlers, `processFiles` (the
   XLSX → dashboard data pipeline).
 - `419–512`: filter/search state + `filteredEvents`, `dailyViewData`,
   `categoricalViewData` memos.
@@ -72,6 +80,9 @@ reloading it in a browser.
   `` `${eventId}::${staff.fullName}::${staff.startTime}` `` (see `StaffRow`,
   `index.html:539`). Note this key silently breaks if a staff member's start
   time changes between syncs (their old note becomes orphaned under the old key).
+- `wiw_guide_seen` — presence alone (any value) means the How-To guide has been
+  dismissed once and won't auto-open on load again; the header's "How to Use" button
+  reopens it manually regardless of this flag.
 
 ## View modes
 
