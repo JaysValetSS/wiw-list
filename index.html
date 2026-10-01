@@ -811,6 +811,8 @@
         };
 
         const cleanPhone = String(staff.phone || '').replace(/\D/g, '');
+        // Google Voice thread ids need the country code (assume US for bare 10-digit numbers)
+        const voicePhone = cleanPhone.length === 10 ? `1${cleanPhone}` : cleanPhone;
         const currentNote = staffNotes[shiftKey] || '';
 
         return (
@@ -833,7 +835,7 @@
                 )}
                 {cleanPhone && (
                   <a 
-                    href={`https://voice.google.com/u/${voiceAccount || '0'}/messages?recipient=${cleanPhone}`}
+                    href={`https://voice.google.com/u/${voiceAccount || '0'}/messages?itemId=t.%2B${voicePhone}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}

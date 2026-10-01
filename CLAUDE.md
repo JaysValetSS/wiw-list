@@ -87,7 +87,7 @@ reloading it in a browser.
   `<html data-theme="...">` by an effect in `App`; the `<style>` block's light-mode
   section (search "Light Mode" in `index.html`) reacts to that attribute.
 - `wiw_voice_account` — digit string (default `'0'`), the `N` in
-  `voice.google.com/u/N/messages?...` for the Google Voice text button in `StaffRow`.
+  `voice.google.com/u/N/messages?itemId=t.%2B1XXXXXXXXXX` for the Google Voice text button in `StaffRow`.
   Per-PC setting so each machine can point at whichever signed-in Google account
   slot holds the Voice number; edited via the `/u/` input in the header.
 
